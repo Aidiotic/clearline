@@ -14,6 +14,10 @@ const PREFS_KEY = 'clearline-prefs';
 // Loss above this is not jitter, it is the link refusing to carry the rate.
 const LOSS_TRIGGER = 0.05;
 
+// Stands in for "no ceiling". High enough that no encoder reaches it, present
+// so the rate controller does not fall back to a conservative default.
+const UNCAPPED_BPS = 200e6;
+
 const DEFAULTS = {
   audio: 'pcm',
   tier: DEFAULT_TIER,
@@ -31,6 +35,9 @@ const DEFAULTS = {
   camRes: 'native',
   camFps: 60,
   camBitrate: 0,
+  camHint: 'detail',
+  camCodec: 'auto',
+  camPrefer: 'resolution',
   micDevice: '',
   camDevice: '',
   name: '',
@@ -76,7 +83,7 @@ function buildProfile() {
   // x-google-* keys are what lift the encoder's own internal cap, and leaving
   // them out means the cap stays where the browser put it. So it becomes a
   // figure nothing will reach rather than an absent one.
-  const UNCAPPED_KBPS = 500000;
+  const UNCAPPED_KBPS = 200000;
   const screenKbps = prefs.screenBitrate ? prefs.screenBitrate * 1000 : UNCAPPED_KBPS;
   const camKbps = prefs.camBitrate ? prefs.camBitrate * 1000 : UNCAPPED_KBPS;
 
@@ -95,15 +102,19 @@ function buildProfile() {
       maxKbps: Math.max(screenKbps, camKbps),
       startKbps: Math.min(screenKbps, 20000),
     },
-    screenBitrate: prefs.screenBitrate ? prefs.screenBitrate * 1e6 : 0,
+    /* "No ceiling" sets a number nothing will reach rather than leaving
+       maxBitrate unset. Absent is not the same as unlimited: with no explicit
+       maximum the rate controller falls back to its own conservative default
+       for the stream type, which for a camera is well under a megabit and is
+       exactly what a soft, blocky picture looks like. */
+    screenBitrate: prefs.screenBitrate ? prefs.screenBitrate * 1e6 : UNCAPPED_BPS,
     screenFps: Number(prefs.screenFps),
     screenHint: prefs.screenHint,
     screenCodec: prefs.screenCodec,
-    // 0 here means "do not set maxBitrate at all", which is the only way to
-    // leave the sender genuinely unbounded.
-    camBitrate: prefs.camBitrate ? prefs.camBitrate * 1e6 : 0,
+    camBitrate: prefs.camBitrate ? prefs.camBitrate * 1e6 : UNCAPPED_BPS,
     camFps: Number(prefs.camFps),
-    camCodec: 'auto',
+    camHint: prefs.camHint,
+    camCodec: prefs.camCodec,
     tier: prefs.tier,
     // What the send gate measures its queue against, so the allowance stays a
     // fixed number of milliseconds rather than a fixed number of bytes.
@@ -470,6 +481,8 @@ async function toggleCam() {
         deviceId: prefs.camDevice,
         res: prefs.camRes,
         fps: Number(prefs.camFps),
+        hint: prefs.camHint,
+        prefer: prefs.camPrefer,
       });
       await room.setTrack(SLOT.CAM, local.cam.getVideoTracks()[0]);
       el.btnCam.setAttribute('aria-pressed', 'true');
@@ -807,9 +820,15 @@ function wireSettings() {
 
   el.prefCamBitrate.addEventListener('change', (e) => { prefs.camBitrate = Number(e.target.value); save(); reprofile(); });
 
-  // Resolution and frame rate are capture constraints, so a running camera has
-  // to be reopened for them to mean anything.
-  for (const [node, key, cast] of [[el.prefCamRes, 'camRes', String], [el.prefCamFps, 'camFps', Number]]) {
+  el.prefCamCodec.addEventListener('change', (e) => { prefs.camCodec = e.target.value; save(); reprofile(true); });
+
+  // Resolution, frame rate, the detail hint and the resolution/rate trade are
+  // all capture constraints, so a running camera has to be reopened for any of
+  // them to mean anything.
+  for (const [node, key, cast] of [
+    [el.prefCamRes, 'camRes', String], [el.prefCamFps, 'camFps', Number],
+    [el.prefCamHint, 'camHint', String], [el.prefCamPrefer, 'camPrefer', String],
+  ]) {
     node.addEventListener('change', async (e) => {
       prefs[key] = cast(e.target.value);
       save();
@@ -912,6 +931,9 @@ function syncSettings() {
   el.prefCamRes.value = String(prefs.camRes);
   el.prefCamFps.value = String(prefs.camFps);
   el.prefCamBitrate.value = String(prefs.camBitrate);
+  el.prefCamHint.value = prefs.camHint;
+  el.prefCamPrefer.value = prefs.camPrefer;
+  el.prefCamCodec.value = prefs.camCodec;
   el.prefName.value = prefs.name;
 }
 

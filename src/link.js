@@ -323,7 +323,10 @@ export class Link {
       await applyEncoding(sender, {
         maxBitrate: p.camBitrate,
         maxFramerate: p.camFps,
-        degradationPreference: 'balanced',
+        // Same reasoning as the screen: dropping resolution is the first thing
+        // a browser reaches for under load, and it is the one thing a person
+        // who asked for the best picture does not want traded away.
+        degradationPreference: p.camHint === 'motion' ? 'balanced' : 'maintain-resolution',
       });
     } else {
       await applyEncoding(sender, { maxBitrate: p.opus.bitrate, priority: 'high' });

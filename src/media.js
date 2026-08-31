@@ -52,26 +52,35 @@ export const CAM_RES = {
 export const CAM_FPS = [30, 60, 120, 240];
 
 /* Same principle as the screen: ask for the ceiling as an ideal and let the
-   webcam hand back whatever it actually has. A 1080p sensor asked for 8K
-   returns 1080p rather than failing, so there is no reason to ask for less. */
-export async function getCam({ deviceId, res = 'native', fps = 60 } = {}) {
+   webcam hand back whatever it actually has.
+
+   Resolution and frame rate genuinely fight each other here, which is not
+   obvious and costs real picture quality. A webcam exposes a fixed list of
+   modes, and a camera that can do 4K30 and 1080p60 has no 4K60 to give you —
+   ask for 60 as an *ideal* and the driver satisfies it by handing back the
+   smaller mode. So "resolution" asks for the frame rate only as a ceiling and
+   lets the sensor pick its best mode underneath, while "framerate" demands the
+   rate and accepts whatever size comes with it. */
+export async function getCam({ deviceId, res = 'native', fps = 60, hint = 'detail', prefer = 'resolution' } = {}) {
   const size = CAM_RES[res] || CAM_RES.native;
   const video = {
     width: { ideal: size.w },
     height: { ideal: size.h },
-    frameRate: { ideal: fps, max: fps },
+    frameRate: prefer === 'framerate' ? { ideal: fps, max: fps } : { max: fps },
   };
   if (deviceId) video.deviceId = { exact: deviceId };
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
     const track = stream.getVideoTracks()[0];
-    // A face is motion, and the encoder should spend its bits accordingly.
-    if (track) track.contentHint = 'motion';
+    /* 'motion' tells the encoder it may trade spatial detail away to hold the
+       frame rate, which is precisely how a face ends up soft. Detail is the
+       right default for someone who asked for the highest quality available. */
+    if (track) track.contentHint = hint === 'motion' ? 'motion' : 'detail';
     return stream;
   } catch (err) {
     if (deviceId && (err.name === 'OverconstrainedError' || err.name === 'NotFoundError')) {
-      return getCam({ res, fps });
+      return getCam({ res, fps, hint, prefer });
     }
     throw err;
   }

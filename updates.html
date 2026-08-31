@@ -25,6 +25,43 @@
     <p class="sect">Released</p>
 
     <div class="rel">
+      <h3>An idle room now costs nothing <time datetime="2026-08-30">30 Aug 2026</time></h3>
+      <ul>
+        <li><strong>Silence is no longer sent.</strong> Muting zeroed the
+          samples and then shipped the zeroes, so someone sitting there doing
+          nothing cost every other person the same 9.2 Mbps as someone talking.
+          Runs of exact digital silence are now dropped after a short tail. The
+          receiver already fills an unsent stretch with zeroes, so what it plays
+          is still bit-identical to what was captured — an idle sender measures
+          0 Mbps, a speaking one still measures 9.27.</li>
+        <li><strong>Quality now fits the room.</strong> A mesh sends everything
+          once per other person, so eight people at 24-bit / 192 kHz was 64.5
+          Mbps of upstream each. The setting is a ceiling and the best tier that
+          fits an upstream budget is used instead: eight people land at 16.1
+          Mbps, two people are untouched. Peers report loss back to whoever is
+          sending to them, so an optimistic budget gets corrected.</li>
+        <li><strong>The send queue is measured in milliseconds.</strong> It was
+          256 KB, which is 1.4 seconds of 16-bit / 48 kHz but only 227 ms of
+          24-bit / 192 kHz — and that queue was most of the half-second of delay
+          a full room saw. Now 60 ms of audio at whatever rate is in use.</li>
+        <li><strong>The camera stopped looking soft.</strong> It was hinted as
+          <code>motion</code>, which tells the encoder it may trade away spatial
+          detail, and set to <code>balanced</code>, which lets it drop
+          resolution. Both are now the other way round. "No ceiling" also sets a
+          number nothing reaches rather than leaving the maximum unset — absent
+          is not unlimited, it falls back to a conservative default. Content
+          hint, codec, and the resolution-versus-frame-rate trade are all
+          selectable.</li>
+        <li><strong>A kill switch in <code>config.js</code></strong>, which is
+          neither bundled nor fingerprinted, so service can be stopped from
+          GitHub's web UI in about thirty seconds without a deploy.</li>
+      </ul>
+      <p class="credit">Found by a friend of the author, who joined a room eight
+        times over and did nothing at all — which turned out to be the most
+        expensive thing anyone could have done.</p>
+    </div>
+
+    <div class="rel">
       <h3>Uncompressed audio, uncapped screen <time datetime="2026-08-30">30 Aug 2026</time></h3>
       <ul>
         <li><strong>Lossless audio, up to 24-bit / 192 kHz.</strong> Raw PCM

@@ -48,11 +48,24 @@ quantisation step entirely and sends the audio graph's own floats.
 Measured on the wire, each setting lands within 0.7% of its theoretical raw
 bitrate. The only overhead is a 12-byte header per 10 ms packet.
 
+Runs of exact digital silence are not sent at all. The receiver fills an unsent
+stretch with zeroes, so what it plays is bit-identical to what was captured, and
+an idle or muted person costs nothing instead of 9.2 Mbps to everyone. The test
+is for exact zero rather than a threshold — a noise gate is a judgement about
+what counts as quiet, and getting it wrong clips the front of a word.
+
 Two honest caveats. Above 48 kHz you need an interface that genuinely captures
 at that rate — ask for 192 kHz on a machine that runs at 48 and the browser will
 happily upsample, so the app tells you when the rate it got is not the rate you
-asked for. And a mesh means every extra person costs another upstream copy: 9.2
-Mbps is fine to one person and 27 Mbps to three.
+asked for.
+
+And a mesh sends everything once per other person, so the cost multiplies with
+the room: 9.2 Mbps to one person is 64.5 Mbps to seven, which no ordinary
+connection has. The setting is therefore a **ceiling**, not a promise — the best
+quality that fits an upstream budget (25 Mbps by default) is what actually goes
+out, so eight people land around 16 Mbps while a two-person call is untouched at
+full quality. Peers also report loss back to whoever is sending to them, so a
+budget that turns out to be optimistic gets corrected by evidence.
 
 If you would rather not spend the bandwidth, **Compressed** is Opus at 510 kbps,
 stereo, full band, DTX off — the top of what the codec can do, and transparent
@@ -72,7 +85,14 @@ Codec is selectable — AV1 and VP9 both handle screen content far better than
 H.264 at the same bitrate.
 
 The camera works the same way: native resolution, up to 240 fps, no ceiling by
-default.
+default, `detail` content hint and `maintain-resolution` so a face stays sharp
+rather than being softened to hold a frame rate.
+
+One thing worth knowing about webcams: they expose a fixed list of modes, and
+4K60 is usually not one of them. Asking for 60 fps on a camera that only offers
+4K30 gets you the smaller mode instead, which is the usual reason a picture
+looks soft. **Prefer resolution** (the default) treats the frame rate as a
+ceiling and lets the sensor pick its best mode underneath.
 
 ### Remaster
 

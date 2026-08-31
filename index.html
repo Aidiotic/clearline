@@ -238,7 +238,28 @@
             <option value="0" selected>No ceiling</option>
           </select>
         </label>
-        <p class="pref-note">Whatever the webcam can actually produce, at whatever rate the link will carry. Most webcams top out well below these numbers, and the resolution you get back is the sensor's, not this setting's.</p>
+        <label class="field"><span>Tuned for</span>
+          <select id="pref-cam-hint">
+            <option value="detail" selected>Detail and sharpness</option>
+            <option value="motion">Motion and smoothness</option>
+          </select>
+        </label>
+        <label class="field"><span>When they conflict</span>
+          <select id="pref-cam-prefer">
+            <option value="resolution" selected>Prefer resolution</option>
+            <option value="framerate">Prefer frame rate</option>
+          </select>
+        </label>
+        <label class="field"><span>Codec</span>
+          <select id="pref-cam-codec">
+            <option value="auto" selected>Auto</option>
+            <option value="AV1">AV1</option>
+            <option value="VP9">VP9</option>
+            <option value="H264">H.264</option>
+            <option value="VP8">VP8</option>
+          </select>
+        </label>
+        <p class="pref-note">A webcam has a fixed list of modes, and 4K60 is usually not one of them — asking for 60 fps on a camera that only offers 4K30 gets you the smaller mode instead, which is the usual reason a picture looks soft. "Prefer resolution" treats the frame rate as a ceiling and lets the sensor pick its best mode underneath. If it still looks blocky, try VP9 or AV1: both hold far more detail per bit than VP8.</p>
       </fieldset>
 
       <fieldset class="pref">

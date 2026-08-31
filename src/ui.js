@@ -18,7 +18,8 @@ export function bind() {
     'budget-opts', 'pref-budget', 'pref-auto-quality',
     'pref-remaster', 'pref-dsp', 'audio-note',
     'pref-screen-res', 'pref-screen-bitrate', 'pref-screen-fps', 'pref-screen-hint', 'pref-screen-codec',
-    'pref-cam-res', 'pref-cam-fps', 'pref-cam-bitrate', 'pref-mic-device', 'pref-cam-device',
+    'pref-cam-res', 'pref-cam-fps', 'pref-cam-bitrate', 'pref-cam-hint', 'pref-cam-prefer',
+    'pref-cam-codec', 'pref-mic-device', 'pref-cam-device',
     'pref-name', 'pref-theme',
   ];
   for (const id of ids) el[camel(id)] = document.getElementById(id);
