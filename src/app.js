@@ -125,6 +125,15 @@ window.addEventListener('hashchange', () => {
 });
 
 function route() {
+  // Checked before anything else, so a site taken out of service cannot be
+  // talked into opening a room by arriving with a code in the URL.
+  const cfg = window.CLEARLINE_CONFIG || {};
+  if (cfg.disabled) {
+    fail(cfg.notice || 'clearline is temporarily out of service.');
+    el.errorReset.hidden = true;
+    return;
+  }
+
   const code = normaliseCode(location.hash);
   if (isCode(code)) {
     el.joinCode.value = formatCode(code);
@@ -190,6 +199,7 @@ async function join(input) {
 }
 
 async function open(code, asHost) {
+  if ((window.CLEARLINE_CONFIG || {}).disabled) return;
   setState('connecting');
   setStatus(asHost ? 'Opening a room…' : 'Looking for the room…');
   el.actCreate.disabled = true;

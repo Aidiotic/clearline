@@ -6,6 +6,18 @@
  */
 
 window.CLEARLINE_CONFIG = {
+  // ── kill switch ──
+  // Set to true to stop the app opening or joining rooms, with the notice
+  // below shown instead. This file is not bundled and not fingerprinted, so
+  // it can be edited straight from GitHub's web UI to take the site out of
+  // service in about thirty seconds without a code change or a rebuild.
+  //
+  // It cannot reach sessions that are already loaded in someone's tab.
+  disabled: true,
+  notice: 'clearline is down for a fix. A room of eight could saturate '
+        + 'everyone\'s uplink, because idle and muted people were still '
+        + 'sending audio at full rate. Back shortly.',
+
   // Extra ICE servers. Roughly 10-20% of network pairs — symmetric NAT on both
   // ends, mostly — cannot reach each other without a TURN relay.
   //
