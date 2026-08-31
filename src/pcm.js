@@ -34,6 +34,40 @@ export const TIERS = {
 
 export const DEFAULT_TIER = 'opusHigh';
 
+// Best first. Stepping down this list is how the room stays inside a budget.
+export const TIER_ORDER = ['fable', 'opusHigh', 'sonnetHigh', 'sonnetLow', 'haiku'];
+
+/* A mesh multiplies whatever one person sends by the number of other people in
+   the room, and lossless audio is expensive enough that the multiplication is
+   the whole problem: eight people at 24-bit/192 kHz is 64.5 Mbps of upstream
+   each, which no ordinary connection has. Sending it anyway does not degrade
+   gracefully — it saturates the uplink and takes the call down with it.
+
+   So the quality is chosen against a budget for total upstream rather than
+   set once and hoped for. `ceiling` is the best the user is willing to use;
+   this returns the best that also fits. */
+export function tierForRoom(peerCount, budgetBps, ceiling = DEFAULT_TIER) {
+  const links = Math.max(1, peerCount);
+  if (!budgetBps) return ceiling;
+
+  const start = Math.max(0, TIER_ORDER.indexOf(ceiling));
+  for (let i = start; i < TIER_ORDER.length; i++) {
+    if (tierBitrate(TIER_ORDER[i]) * links <= budgetBps) return TIER_ORDER[i];
+  }
+  // Even the smallest does not fit. Send it anyway rather than going silent,
+  // and let the caller say so.
+  return TIER_ORDER[TIER_ORDER.length - 1];
+}
+
+export function stepDown(tier) {
+  const i = TIER_ORDER.indexOf(tier);
+  return TIER_ORDER[Math.min(TIER_ORDER.length - 1, i + 1)];
+}
+
+export function tierBytesPerSecond(tier) {
+  return tierBitrate(tier) / 8;
+}
+
 export function tierBitrate(tier) {
   const t = TIERS[tier] || TIERS[DEFAULT_TIER];
   return t.rate * 2 * FORMATS[t.format].bits;

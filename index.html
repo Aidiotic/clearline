@@ -126,6 +126,22 @@
         <p class="pref-note" id="tier-note"></p>
       </fieldset>
 
+      <fieldset class="pref" id="budget-opts">
+        <legend>Upstream budget</legend>
+        <label class="switch"><input type="checkbox" id="pref-auto-quality" checked> Fit the quality to the room</label>
+        <label class="field"><span>Your upload</span>
+          <select id="pref-budget">
+            <option value="5">5 Mbps</option>
+            <option value="10">10 Mbps</option>
+            <option value="25" selected>25 Mbps</option>
+            <option value="50">50 Mbps</option>
+            <option value="100">100 Mbps</option>
+            <option value="0">Ignore — always use the setting above</option>
+          </select>
+        </label>
+        <p class="pref-note">A mesh sends your audio once to every other person, so the cost multiplies with the room. The setting above becomes a ceiling and the best quality that fits this budget is used instead. Turn it off and a full room will use more upload than most connections have.</p>
+      </fieldset>
+
       <fieldset class="pref">
         <legend>Remaster</legend>
         <div class="choices" id="pref-remaster">

@@ -13,10 +13,8 @@ window.CLEARLINE_CONFIG = {
   // service in about thirty seconds without a code change or a rebuild.
   //
   // It cannot reach sessions that are already loaded in someone's tab.
-  disabled: true,
-  notice: 'clearline is down for a fix. A room of eight could saturate '
-        + 'everyone\'s uplink, because idle and muted people were still '
-        + 'sending audio at full rate. Back shortly.',
+  disabled: false,
+  notice: 'clearline is temporarily out of service. Back shortly.',
 
   // Extra ICE servers. Roughly 10-20% of network pairs — symmetric NAT on both
   // ends, mostly — cannot reach each other without a TURN relay.

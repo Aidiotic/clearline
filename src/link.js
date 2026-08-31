@@ -40,6 +40,11 @@ const PCM_CHANNEL_ID = 1;
 // for the part wrapper on top of the payload.
 const MAX_PART = 8000;
 
+// How much audio may sit queued for the wire before packets start being
+// dropped instead. Roughly one jitter buffer's worth: past this the link is
+// not keeping up and the backlog is pure added latency.
+const PCM_QUEUE_MS = 60;
+
 export class Link {
   constructor({ selfId, peerId, initiator, signal, config, profile, handlers }) {
     this.selfId = selfId;
@@ -73,6 +78,8 @@ export class Link {
     this.chain = Promise.resolve();
 
     this.stats = { send: 0, recv: 0, rtt: 0, loss: 0 };
+    this.pcmDropped = 0;
+    this.reportedLoss = 0;
     this._lastStats = null;
   }
 
@@ -215,6 +222,8 @@ export class Link {
       msg = whole;
     }
     if (msg.t === 'state') { this.onRemoteState(msg); return; }
+    // The far end telling us what it is failing to receive from us.
+    if (msg.t === 'quality') { this.reportedLoss = Math.max(this.reportedLoss, msg.loss || 0); return; }
     if (msg.t === 'slots') { this.onSlots(msg.mids); return; }
     if (msg.t === 'renegotiate') { this.negotiate(); return; }
     if (msg.t === 'desc') this.enqueue(() => this.onDescription(msg.desc));
@@ -328,11 +337,22 @@ export class Link {
     }
   }
 
+  /* The queue is bounded in milliseconds of audio, not bytes. A fixed byte
+     figure means something completely different at each quality setting — a
+     256 KB allowance is 1.4 seconds of 16-bit/48 kHz but only 227 ms of
+     24-bit/192 kHz, and 227 ms of audio waiting to go out is 227 ms of delay
+     that no jitter buffer can take back out.
+
+     Dropping the newest packet is the right call once it is full: sending it
+     late only pushes the far end further behind, and the receiver conceals a
+     gap it never got far better than it recovers from a growing backlog. */
   sendPcm(buf) {
-    // bufferedAmount climbing means the link cannot carry the raw rate.
-    // Dropping the newest packet is the right call: catching up later would
-    // only push the far end's jitter buffer further behind.
-    if (this.pcm?.readyState !== 'open' || this.pcm.bufferedAmount > 262144) return;
+    if (this.pcm?.readyState !== 'open') return;
+
+    const bytesPerSecond = this.profile.pcmBytesPerSecond || 1152000;
+    const budget = bytesPerSecond * (PCM_QUEUE_MS / 1000);
+    if (this.pcm.bufferedAmount > budget) { this.pcmDropped++; return; }
+
     try { this.pcm.send(buf); } catch { /* channel closing */ }
   }
 

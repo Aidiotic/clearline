@@ -4,15 +4,23 @@
 import { bind, el, showView, setState, setStatus, announce, setLevel, fail, renderQR, Stage } from './ui.js';
 import { Room } from './room.js';
 import { SLOT, getMic, getCam, getScreen, listDevices, stopStream, onShareEnded, describeTrack } from './media.js';
-import { ensureContext, meterForStream, contextRate, tierBitrate, tierLabel, TIERS, FORMATS, DEFAULT_TIER } from './pcm.js';
+import { ensureContext, meterForStream, contextRate, tierBitrate, tierLabel, TIERS, FORMATS,
+         DEFAULT_TIER, TIER_ORDER, tierForRoom, stepDown, tierBytesPerSecond } from './pcm.js';
 import { presetLabel } from './remaster.js';
 import { newCode, normaliseCode, isCode, formatCode, bitrate, safeName } from './util.js';
 
 const PREFS_KEY = 'clearline-prefs';
 
+// Loss above this is not jitter, it is the link refusing to carry the rate.
+const LOSS_TRIGGER = 0.05;
+
 const DEFAULTS = {
   audio: 'pcm',
   tier: DEFAULT_TIER,
+  // The tier above is a ceiling, not a promise. What actually goes out is the
+  // best setting that fits this much total upstream across the whole mesh.
+  budget: 25,
+  autoQuality: true,
   remaster: '',
   dsp: false,
   screenRes: 'native',
@@ -39,6 +47,11 @@ const peers = new Map();   // peerId -> { streams: {}, meter }
 let muted = false;
 let statsTimer = null;
 let startedAt = 0;
+
+/* Effective quality, as opposed to the ceiling in prefs. Two things push it
+   down: the arithmetic of the room size against the budget, and peers telling
+   us they are actually losing what we send. */
+const quality = { tier: DEFAULT_TIER, floor: null, cleanTicks: 0, lossyTicks: 0 };
 
 /* ── preferences ── */
 
@@ -92,6 +105,9 @@ function buildProfile() {
     camFps: Number(prefs.camFps),
     camCodec: 'auto',
     tier: prefs.tier,
+    // What the send gate measures its queue against, so the allowance stays a
+    // fixed number of milliseconds rather than a fixed number of bytes.
+    pcmBytesPerSecond: tierBytesPerSecond(quality.tier || prefs.tier),
     // A higher sample rate means each packet covers the same 10 ms, so the
     // buffer target in milliseconds holds regardless of tier.
     jitterMs: 40,
@@ -302,9 +318,17 @@ function dspWanted() {
 async function applyAudioMode() {
   if (!local.mic || !room) return;
 
+  // The setting is a ceiling; what goes out is whatever also fits the room.
+  const budget = prefs.autoQuality && prefs.budget ? prefs.budget * 1e6 : 0;
+  quality.tier = tierForRoom(room.links.size, budget, prefs.tier);
+  if (quality.floor && TIER_ORDER.indexOf(quality.floor) > TIER_ORDER.indexOf(quality.tier)) {
+    quality.tier = quality.floor;
+  }
+  profile.pcmBytesPerSecond = tierBytesPerSecond(quality.tier);
+
   await room.configureAudio({
     mode: prefs.audio === 'pcm' ? 'pcm' : 'opus',
-    tier: prefs.tier,
+    tier: quality.tier,
     remaster: prefs.remaster || null,
     stream: local.mic,
   });
@@ -314,13 +338,96 @@ async function applyAudioMode() {
      tier's name is now a lie, and saying nothing would be the dishonest part.
      The samples are still uncompressed either way. */
   if (prefs.audio === 'pcm') {
-    const asked = TIERS[prefs.tier].rate;
+    const asked = TIERS[quality.tier].rate;
     const got = contextRate();
     if (got && got !== asked) {
       setStatus(`Asked for ${(asked / 1000).toFixed(0)} kHz, this machine runs at ${(got / 1000).toFixed(1)} kHz.`);
     }
   }
   updateQualityNote();
+}
+
+/* ── adapting to the room ──
+
+   Two things force the quality down from the ceiling the user picked. The
+   first is arithmetic and is known in advance: a mesh sends everything once
+   per other person, so the room's size decides what fits in the upstream
+   budget. The second is evidence — peers reporting that what we send is not
+   arriving — which catches every case where the budget was optimistic. */
+
+async function adaptQuality() {
+  if (!room || room.closed || prefs.audio !== 'pcm') return;
+
+  const budget = prefs.autoQuality && prefs.budget ? prefs.budget * 1e6 : 0;
+  let want = tierForRoom(room.links.size, budget, prefs.tier);
+
+  // A floor set by observed loss outranks the calculation that failed to
+  // predict it.
+  if (quality.floor && TIER_ORDER.indexOf(quality.floor) > TIER_ORDER.indexOf(want)) {
+    want = quality.floor;
+  }
+  if (want === quality.tier) return;
+
+  quality.tier = want;
+  profile.pcmBytesPerSecond = tierBytesPerSecond(want);
+  await room.configureAudio({ tier: want });
+  updateQualityNote();
+  updateStats();
+}
+
+/* Loss is measured over the last interval, not since the call began — a burst
+   while the connection was still settling should not hold the quality down
+   for the rest of the hour. */
+function reportLossUpstream() {
+  if (!room) return;
+  for (const [peerId, rx] of room.pcmIn) {
+    const rec = peerRecord(peerId);
+    const prev = rec.lossMark || { lost: 0, played: 0 };
+    const lost = rx.stats.lost - prev.lost;
+    const played = rx.stats.played - prev.played;
+    rec.lossMark = { lost: rx.stats.lost, played: rx.stats.played };
+
+    const total = lost + played;
+    if (total <= 0) continue;
+    const ratio = lost / total;
+    rec.recentLoss = ratio;
+    // Only worth a message when it is bad enough to act on.
+    if (ratio > LOSS_TRIGGER) room.links.get(peerId)?.send({ t: 'quality', loss: ratio });
+  }
+}
+
+function respondToReportedLoss() {
+  if (!room || prefs.audio !== 'pcm') return;
+  let worst = 0;
+  for (const link of room.links.values()) {
+    worst = Math.max(worst, link.reportedLoss || 0);
+    link.reportedLoss = 0;
+  }
+
+  if (worst > LOSS_TRIGGER) {
+    quality.cleanTicks = 0;
+    quality.lossyTicks++;
+    // Two consecutive bad seconds, so one hiccup does not cost a step.
+    if (quality.lossyTicks >= 2) {
+      quality.lossyTicks = 0;
+      const floor = stepDown(quality.floor || quality.tier);
+      if (floor !== quality.floor) {
+        quality.floor = floor;
+        setStatus(`Stepping audio down — ${Math.round(worst * 100)}% of it was not arriving.`);
+        adaptQuality();
+      }
+    }
+    return;
+  }
+
+  quality.lossyTicks = 0;
+  // A clean minute earns one step back, which is slow enough not to oscillate.
+  if (quality.floor && ++quality.cleanTicks >= 60) {
+    quality.cleanTicks = 0;
+    const i = TIER_ORDER.indexOf(quality.floor);
+    quality.floor = i <= 0 ? null : TIER_ORDER[i - 1];
+    adaptQuality();
+  }
 }
 
 /* ── toggles ── */
@@ -450,6 +557,8 @@ function onTrackMuted(peerId, slot, isMuted) {
 function onRoster() {
   updateStage();
   updateStats();
+  // Someone arriving or leaving changes what the mesh costs everyone.
+  adaptQuality();
 }
 
 function onLinkState(peerId, state) {
@@ -560,6 +669,9 @@ function loop() {
 
 async function updateStats() {
   if (!room || room.closed) return;
+  reportLossUpstream();
+  respondToReportedLoss();
+
   const s = await room.sampleStats();
   const bits = [];
   bits.push(`${s.peers + 1} ${s.peers === 0 ? 'person' : 'people'}`);
@@ -573,13 +685,18 @@ async function updateStats() {
 
 function audioLabel() {
   const chain = prefs.remaster ? ` · remastered (${presetLabel(prefs.remaster)})` : '';
-  if (prefs.audio === 'pcm') return tierLabel(prefs.tier) + chain;
+  if (prefs.audio === 'pcm') {
+    // Say when the room forced it below what was asked for, rather than
+    // reporting the setting and letting it look like nothing happened.
+    const stepped = quality.tier !== prefs.tier ? ' (room)' : '';
+    return tierLabel(quality.tier) + stepped + chain;
+  }
   if (prefs.audio === 'voice') return 'Voice · 64 kbps' + chain;
   return 'Opus · 510 kbps stereo' + chain;
 }
 
 function audioBitrate() {
-  if (prefs.audio === 'pcm') return tierBitrate(prefs.tier);
+  if (prefs.audio === 'pcm') return tierBitrate(quality.tier);
   return prefs.audio === 'voice' ? 64000 : 510000;
 }
 
@@ -592,9 +709,15 @@ function updateQualityNote() {
       ? 'Mono, gated and cheap. For a bad connection or a phone on data.'
       : 'Opus at the top of its range, stereo, full band. Transparent in listening tests, and a fraction of the bandwidth of lossless.';
 
+  /* The number that matters is not the tier's own bitrate but that bitrate
+     times the number of other people, because a mesh sends it once each. That
+     multiplication is what a room of eight ran into. */
+  const links = Math.max(1, room ? room.links.size : 1);
+  const each = tierBitrate(prefs.tier);
   const tier = TIERS[prefs.tier];
   el.tierNote.textContent =
-    `${bitrate(tierBitrate(prefs.tier))} each way, per person, in a mesh — so ${bitrate(tierBitrate(prefs.tier) * 2)} up with two others. ` +
+    `${bitrate(each)} each way per person — ${bitrate(each * links)} upstream ` +
+    `with ${links === 1 ? 'one other person' : `${links} others`} in the room, because a mesh sends it once each. ` +
     (tier.rate > 48000
       ? 'Above 48 kHz needs an interface that actually captures at that rate; anything else is upsampling.'
       : 'Every machine can do this rate natively.');
@@ -627,6 +750,21 @@ function wireSettings() {
     save();
     Object.assign(profile, buildProfile());
     await applyAudioMode();
+    updateQualityNote();
+  });
+
+  el.prefBudget.addEventListener('change', async (e) => {
+    prefs.budget = Number(e.target.value);
+    save();
+    await adaptQuality();
+    updateQualityNote();
+  });
+
+  el.prefAutoQuality.addEventListener('change', async (e) => {
+    prefs.autoQuality = e.target.checked;
+    save();
+    syncSettings();
+    await adaptQuality();
     updateQualityNote();
   });
 
@@ -758,7 +896,11 @@ function syncSettings() {
   for (const input of el.prefTheme.querySelectorAll('input')) input.checked = input.value === prefs.theme;
 
   el.prefTier.value = prefs.tier;
+  el.prefBudget.value = String(prefs.budget);
+  el.prefAutoQuality.checked = prefs.autoQuality;
+  el.prefBudget.disabled = !prefs.autoQuality;
   el.pcmOpts.hidden = prefs.audio !== 'pcm';
+  el.budgetOpts.hidden = prefs.audio !== 'pcm';
   el.prefDsp.checked = dspWanted();
   el.prefDsp.disabled = prefs.audio === 'voice';
 

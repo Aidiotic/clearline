@@ -19,6 +19,11 @@ const FMT_I24 = 3;
 
 const HEADER = 12;   // seq u32 · format u8 · channels u8 · frames u16 · rate u32
 
+/* Packets of silence still sent after the signal stops, at 10 ms each. Enough
+   for the far end's jitter buffer to drain through the transition rather than
+   hitting an underrun the instant someone stops talking. */
+const SILENCE_TAIL = 20;
+
 function bytesPerSample(format) {
   if (format === FMT_F32) return 4;
   if (format === FMT_I24) return 3;
@@ -41,6 +46,7 @@ class PcmCapture extends AudioWorkletProcessor {
     this.seq = 0;
     this.filled = 0;
     this.muted = false;
+    this.silentRun = 0;
     this.acc = [new Float32Array(this.frames), new Float32Array(this.frames)];
 
     this.port.onmessage = (e) => {
@@ -67,9 +73,39 @@ class PcmCapture extends AudioWorkletProcessor {
     return true;
   }
 
+  /* Digital silence is the one thing that can be dropped without giving up
+     anything at all: the receiver fills an unsent stretch with zeroes, so what
+     it plays is bit-identical to what was captured. It is also the whole cost
+     of an idle room — muted, no signal, or an input that is not connected all
+     produce exact zeroes, and sending them at 9 Mbit each to every other
+     person is what let a room of eight flatten everyone's uplink.
+
+     Deliberately an exact test, not a noise gate. A threshold would be a
+     judgement about what counts as quiet, and getting it wrong means clipping
+     the front of a word — not something to do on a path whose entire promise
+     is that it does not touch the samples. */
+  isSilent() {
+    const l = this.acc[0], r = this.acc[1];
+    for (let i = 0; i < this.frames; i++) {
+      if (l[i] !== 0 || r[i] !== 0) return false;
+    }
+    return true;
+  }
+
   flush() {
     const n = this.frames;
     const format = this.format;
+
+    // The sequence number has to advance whether or not anything goes out:
+    // the far end derives an absolute frame position from it, and a gap is
+    // exactly how it learns that silence belongs there.
+    const silent = this.isSilent();
+    this.silentRun = silent ? this.silentRun + 1 : 0;
+    if (this.silentRun > SILENCE_TAIL) {
+      this.seq = (this.seq + 1) >>> 0;
+      this.filled = 0;
+      return;
+    }
     const buf = new ArrayBuffer(HEADER + n * this.channels * bytesPerSample(format));
     const head = new DataView(buf);
     head.setUint32(0, this.seq >>> 0);
