@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+*.log
+
+# Local dev only: tells `npx serve` not to cache, so an edited module is
+# actually the one the browser loads. GitHub Pages ignores it either way.
+serve.json

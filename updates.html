@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>clearline — updates</title>
+<meta name="description" content="What has changed in clearline, and what is next.">
+<link rel="stylesheet" href="style.css">
+<meta name="theme-color" content="#F5EAD8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1B1815" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='3' fill='%23C67139'/></svg>">
+</head>
+<body class="doc">
+<main id="app">
+
+  <header class="head">
+    <h1 class="wordmark">
+      <span class="mark" aria-hidden="true"><i></i></span><span class="wordmark-text">clearline</span>
+    </h1>
+    <p class="statusline">Updates</p>
+  </header>
+
+  <section class="panel">
+    <p class="sect">Released</p>
+
+    <div class="rel">
+      <h3>Uncompressed audio, uncapped screen <time datetime="2026-08-30">30 Aug 2026</time></h3>
+      <ul>
+        <li><strong>Lossless audio, up to 24-bit / 192 kHz.</strong> Raw PCM
+          captured on an audio worklet and sent down its own data channel,
+          unordered and unretransmitted, with a jitter buffer keyed by absolute
+          frame index at the far end. No encoder anywhere in the path. Five
+          settings, from 16-bit / 48 kHz at 1.5 Mbps to 32-bit float / 192 kHz
+          at 12.3 Mbps. Measured on the wire, each lands within 0.7% of its
+          theoretical raw bitrate.</li>
+        <li><strong>Screen sharing to 16K at 360 fps</strong>, with ceilings up
+          to 400 Mbps or none, selectable codec, and
+          <code>maintain-resolution</code> so text stays readable under load
+          instead of the browser trading pixels away for frame rate.</li>
+        <li><strong>Camera at native resolution</strong>, up to 240 fps, no
+          bitrate ceiling by default.</li>
+        <li><strong>Remaster.</strong> An optional mastering chain on your own
+          signal — high-pass, corrective EQ, subtractive de-esser, glue
+          compressor, limiter — with Voice, Music and Broadcast presets. Off by
+          default, because it means what you send is no longer raw.</li>
+        <li><strong>Compressed and Voice modes</strong> for when the bandwidth
+          is not there: Opus at 510 kbps stereo with DTX off, or 64 kbps mono.</li>
+        <li><strong>Rooms are a code, not an account.</strong> Nine characters
+          from an alphabet with nothing you could misread. Share the link and
+          it drops people straight in.</li>
+        <li><strong>Full mesh, and it survives losing the host.</strong> Nothing
+          is relayed or mixed — which is what keeps the audio uncompressed end
+          to end — and if whoever opened the room leaves, the rest elect
+          someone to take the door key.</li>
+      </ul>
+      <p class="credit">Built on the same footing as dropline: static files on
+        GitHub Pages, PeerJS's public broker for the handshake only, and no
+        server that ever sees the call.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="sect">Next</p>
+    <p class="sect-note">Roughly in order. Nothing here is promised.</p>
+
+    <ol class="road">
+      <li>
+        <h3>A TURN relay</h3>
+        <p>Around 10–20% of network pairs cannot reach each other on STUN
+          alone. Until there is one deployed, those calls fail rather than
+          degrade, which is the worst way to fail.</p>
+      </li>
+      <li>
+        <h3>Adaptive lossless</h3>
+        <p>The quality setting is fixed for the call. It should notice when the
+          link cannot carry 9.2 Mbps and step down a tier rather than letting
+          the jitter buffer starve.</p>
+      </li>
+      <li>
+        <h3>Per-person volume</h3>
+        <p>The receiver already has a gain node per peer. It just has nothing
+          driving it yet.</p>
+      </li>
+      <li>
+        <h3>Recording</h3>
+        <p>The samples arriving are already the samples that were captured, so
+          writing them to a WAV costs nothing but the plumbing.</p>
+      </li>
+      <li>
+        <h3>Its own signalling</h3>
+        <p>The public PeerJS broker only ever sees the handshake, never the
+          call, but it is a shared free service with no uptime guarantee.</p>
+      </li>
+    </ol>
+  </section>
+
+  <footer class="foot">
+    <span class="foot-meta"><a href="./">Back</a></span>
+    <span class="foot-links">
+      <a href="https://github.com/Aidiotic/clearline">Source</a>
+    </span>
+  </footer>
+</main>
+</body>
+</html>

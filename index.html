@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>clearline</title>
+<meta name="description" content="Calls between browsers with uncompressed audio and uncapped screen sharing. A room code, not an account.">
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F5EAD8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1B1815" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='3' fill='%23C67139'/></svg>">
+</head>
+<body>
+
+<!-- data-state drives every motion cue on the page from one place. -->
+<main id="app" data-state="idle">
+
+  <header class="head">
+    <h1 class="wordmark">
+      <span class="mark" aria-hidden="true"><i></i></span><span class="wordmark-text">clearline</span>
+    </h1>
+    <p class="statusline" id="statusline"></p>
+  </header>
+
+  <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+
+  <!-- ── Start ──────────────────────────────────────────────── -->
+  <section id="view-start" class="view" hidden>
+    <p class="lede-big">Uncompressed audio and an uncapped screen, straight between browsers.</p>
+
+    <div class="row row-acts">
+      <button id="act-create" type="button" class="act act-strong">Start a room</button>
+    </div>
+
+    <form class="join" id="join-form">
+      <label class="join-label" for="join-code">or join with a code</label>
+      <div class="join-row">
+        <input type="text" id="join-code" class="code-input" inputmode="text" autocomplete="off"
+               spellcheck="false" maxlength="11" placeholder="abc-def-ghj" aria-label="Room code">
+        <button type="submit" id="act-join" class="act">Join</button>
+      </div>
+    </form>
+
+    <p class="hint">No account, no upload, nothing stored. The room exists only while someone is in it.</p>
+  </section>
+
+  <!-- ── Invite ─────────────────────────────────────────────── -->
+  <section id="view-invite" class="view" hidden>
+    <div class="qr" id="qr"></div>
+
+    <p class="code-display" id="code-display" aria-label="Room code"></p>
+
+    <div class="invite-actions">
+      <input type="text" id="share-link" readonly spellcheck="false" aria-label="Room link">
+      <div class="row">
+        <button id="copy-btn" type="button" class="act act-accent">Copy link</button>
+        <button id="share-btn" type="button" class="act" hidden>Share</button>
+        <button id="enter-btn" type="button" class="act act-strong">Enter room</button>
+      </div>
+    </div>
+
+    <p class="hint">Send this to whoever you want to call. The link drops them straight in.</p>
+  </section>
+
+  <!-- ── Room ───────────────────────────────────────────────── -->
+  <section id="view-room" class="view" hidden>
+    <div class="stage" id="stage"></div>
+
+    <div class="dock">
+      <div class="dock-acts">
+        <button id="btn-mic"    type="button" class="act" aria-pressed="false">Mic</button>
+        <button id="btn-cam"    type="button" class="act" aria-pressed="false">Camera</button>
+        <button id="btn-screen" type="button" class="act" aria-pressed="false">Screen</button>
+        <button id="btn-invite" type="button" class="act">Invite</button>
+        <button id="btn-settings" type="button" class="act">Settings</button>
+        <button id="btn-leave"  type="button" class="act act-leave">Leave</button>
+      </div>
+      <p class="dock-meta" id="dock-meta"></p>
+    </div>
+  </section>
+
+  <!-- ── Error ──────────────────────────────────────────────── -->
+  <section id="view-error" class="view" hidden>
+    <p class="err" id="error-msg"></p>
+    <button class="act act-strong" id="error-reset" type="button">Start over</button>
+  </section>
+
+  <footer class="foot">
+    <span class="foot-meta"><span id="quality-note"></span></span>
+    <span class="foot-links">
+      <a href="updates.html">Updates</a>
+      <a href="https://github.com/Aidiotic/clearline">Source</a>
+    </span>
+  </footer>
+
+  <dialog id="settings" class="sheet" aria-label="Settings">
+    <div class="sheet-body">
+      <div class="sheet-head">
+        <h2 class="sheet-title">Settings</h2>
+        <button id="sheet-close" class="sheet-close" aria-label="Close settings">esc</button>
+      </div>
+
+      <fieldset class="pref">
+        <legend>Audio</legend>
+        <div class="choices" id="pref-audio">
+          <label><input type="radio" name="audio" value="pcm" checked> Lossless</label>
+          <label><input type="radio" name="audio" value="opus"> Compressed</label>
+          <label><input type="radio" name="audio" value="voice"> Voice</label>
+        </div>
+        <p class="pref-note" id="audio-note"></p>
+      </fieldset>
+
+      <fieldset class="pref" id="pcm-opts">
+        <legend>Lossless quality</legend>
+        <label class="field"><span>Quality</span>
+          <select id="pref-tier">
+            <option value="haiku">Haiku 4.5 · 16-bit / 48 kHz · 1.5 Mbps</option>
+            <option value="sonnetLow">Sonnet Low · 24-bit / 48 kHz · 2.3 Mbps</option>
+            <option value="sonnetHigh">Sonnet High · 24-bit / 96 kHz · 4.6 Mbps</option>
+            <option value="opusHigh" selected>Opus High · 24-bit / 192 kHz · 9.2 Mbps</option>
+            <option value="fable">Fable · 32-bit float / 192 kHz · 12.3 Mbps</option>
+          </select>
+        </label>
+        <p class="pref-note" id="tier-note"></p>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>Remaster</legend>
+        <div class="choices" id="pref-remaster">
+          <label><input type="radio" name="remaster" value="" checked> Off</label>
+          <label><input type="radio" name="remaster" value="voice"> Voice</label>
+          <label><input type="radio" name="remaster" value="music"> Music</label>
+          <label><input type="radio" name="remaster" value="broadcast"> Broadcast</label>
+        </div>
+        <p class="pref-note">A mastering chain on your own signal: rumble filter, corrective EQ, de-esser, compressor, limiter. It cannot add detail your microphone never heard, and what you send is no longer raw — the transport stays lossless, the source does not.</p>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>Microphone processing</legend>
+        <label class="switch"><input type="checkbox" id="pref-dsp"> Echo cancellation, noise gate and auto gain</label>
+        <p class="pref-note">Off keeps the signal untouched. Wear headphones, or the far end hears itself.</p>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>Screen share</legend>
+        <label class="field"><span>Resolution</span>
+          <select id="pref-screen-res">
+            <option value="native" selected>Native (uncapped)</option>
+            <option value="1080">1080p</option>
+            <option value="1440">1440p</option>
+            <option value="2160">4K</option>
+            <option value="4320">8K</option>
+            <option value="8640">16K</option>
+          </select>
+        </label>
+        <label class="field"><span>Ceiling</span>
+          <select id="pref-screen-bitrate">
+            <option value="8">8 Mbps</option>
+            <option value="25">25 Mbps</option>
+            <option value="60" selected>60 Mbps</option>
+            <option value="150">150 Mbps</option>
+            <option value="400">400 Mbps</option>
+            <option value="0">No ceiling</option>
+          </select>
+        </label>
+        <label class="field"><span>Frame rate</span>
+          <select id="pref-screen-fps">
+            <option value="30">30 fps</option>
+            <option value="60" selected>60 fps</option>
+            <option value="120">120 fps</option>
+            <option value="144">144 fps</option>
+            <option value="240">240 fps</option>
+            <option value="360">360 fps</option>
+          </select>
+        </label>
+        <label class="field"><span>Tuned for</span>
+          <select id="pref-screen-hint">
+            <option value="detail" selected>Text and detail</option>
+            <option value="motion">Motion and games</option>
+          </select>
+        </label>
+        <label class="field"><span>Codec</span>
+          <select id="pref-screen-codec">
+            <option value="auto" selected>Auto</option>
+            <option value="AV1">AV1</option>
+            <option value="VP9">VP9</option>
+            <option value="H264">H.264</option>
+            <option value="VP8">VP8</option>
+          </select>
+        </label>
+        <p class="pref-note" id="screen-note">Nothing here is clamped down for you. Your display and your uplink are the real limits: asking for 16K at 360 fps gets you whatever the source can actually produce, and a ceiling your connection cannot carry will stutter.</p>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>Camera</legend>
+        <label class="field"><span>Resolution</span>
+          <select id="pref-cam-res">
+            <option value="native" selected>Native (uncapped)</option>
+            <option value="720">720p</option>
+            <option value="1080">1080p</option>
+            <option value="1440">1440p</option>
+            <option value="2160">4K</option>
+            <option value="4320">8K</option>
+          </select>
+        </label>
+        <label class="field"><span>Frame rate</span>
+          <select id="pref-cam-fps">
+            <option value="30">30 fps</option>
+            <option value="60" selected>60 fps</option>
+            <option value="120">120 fps</option>
+            <option value="240">240 fps</option>
+          </select>
+        </label>
+        <label class="field"><span>Ceiling</span>
+          <select id="pref-cam-bitrate">
+            <option value="6">6 Mbps</option>
+            <option value="15">15 Mbps</option>
+            <option value="40">40 Mbps</option>
+            <option value="100">100 Mbps</option>
+            <option value="0" selected>No ceiling</option>
+          </select>
+        </label>
+        <p class="pref-note">Whatever the webcam can actually produce, at whatever rate the link will carry. Most webcams top out well below these numbers, and the resolution you get back is the sensor's, not this setting's.</p>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>Devices</legend>
+        <label class="field"><span>Microphone</span><select id="pref-mic-device"></select></label>
+        <label class="field"><span>Camera</span><select id="pref-cam-device"></select></label>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>You</legend>
+        <label class="field"><span>Name</span>
+          <input type="text" id="pref-name" class="text-field" maxlength="24" placeholder="Anonymous">
+        </label>
+      </fieldset>
+
+      <fieldset class="pref">
+        <legend>Theme</legend>
+        <div class="choices" id="pref-theme">
+          <label><input type="radio" name="theme" value="system" checked> Auto</label>
+          <label><input type="radio" name="theme" value="light"> Light</label>
+          <label><input type="radio" name="theme" value="dark"> Dark</label>
+        </div>
+      </fieldset>
+    </div>
+  </dialog>
+</main>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"
+        integrity="sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"
+        integrity="sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz"
+        crossorigin="anonymous"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
